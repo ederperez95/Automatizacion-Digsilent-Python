@@ -10,6 +10,7 @@ Created on Tue Nov 30 10:42:22 2021
 import powerfactory
 import time
 import pandas as pd
+import os
 
 
 
@@ -41,8 +42,9 @@ app.GetAllUsers(1)
 reloj = app.GetFromStudyCase('*.SetTime')
 Ldf = app.GetFromStudyCase('*.ComLdf')
 Ldf.iopt_check = 0
-ruta = script.ruta
-dataFrame = pd.DataFrame()
+ruta = script.Ruta
+dataFrame = pd.DataFrame(columns=['Caso de estudio', 'Escenario', 'Perdidas'])
+
 
 
 #obtiene los objetos de los sets del powerFactory      
@@ -57,50 +59,90 @@ for i in script.GetContents():
         
 for casoDeEstudio in set_Casos_de_estudio:
     
+    
+    
+    # Activar caso de estudio
     casoDeEstudio.Activate()
     
+    
+    # guardar nombre del caso de estudio
     casoDeEstudioName = casoDeEstudio.loc_name
-    for contingencia in set_Contingencias:
-        
-        estadoInicial = contingencia.outserv
-        
-        perdidasTotales = 0
-        
-        Ldf.Execute()
-        
-        for elemento in set_Elementos_a_monitorear:
-            
-            try:
-                perdidasTotales += elemento.GetAttribute('c:Ploss')
-            except:
-                pass
+    
+    # Escenario operativo 
+    escenarioActivo = app.GetActiveScenario() 
+    
+    # variables para posteriormente ser guardadas en el dataframe
+    index = 0
+    indice = []
+    sumaPerdidas = []
+    temp = []
+    
+    # flujo de cargas
+    Ldf.Execute()    
+    
+    # Suma de las perdidas por las lineas de transmision
+    perdidasTotales = 0    
+    for elemento in set_Elementos_a_monitorear:
         
         try:
+            perdidasTotales += elemento.GetAttribute('c:Ploss')
+        except:
+            pass
+    
+    # Agregar los valores hallados a los vectores
+    indice.append((casoDeEstudioName, 'Caso Base'))
+    sumaPerdidas.append(perdidasTotales)
+    dataFrame.loc[index] = [casoDeEstudioName, 'Caso Base', perdidasTotales]
+    index += 1
+    # imprime valor de las perdidas del caso base
+    app.PrintPlain(str(perdidasTotales) + ' Caso base')
+    
+    # contingencias 
+    for contingencia in set_Contingencias:
+        
+        # Hace la contingencia (saca el elemento de servivio)
+        estadoInicial = contingencia.outserv
+        try:
+            
             manejoDeContingencias(contingencia, estadoInicial, 'apagar')
-            
-            perdidasTotales = 0
-            
+           
+            # ejecuta flujo de cargas
             Ldf.Execute()
             
+            # Suma de las perdidas por las lineas de transmision
+            perdidasTotales = 0
             for elemento in set_Elementos_a_monitorear:
                 try:
                     perdidasTotales += elemento.GetAttribute('c:Ploss')
                 except:
                     pass
-               
-            app.PrintPlain(perdidasTotales)
+            
+            # Agregar los valores hallados a los vectores
+            indice.append((casoDeEstudioName, elemento.loc_name))
+            sumaPerdidas.append(perdidasTotales)
+            dataFrame.loc[index] = [casoDeEstudioName, contingencia.loc_name, perdidasTotales]
+            index += 1
             
             
+            
+            # imprime valor de las perdidas de la contingencia
+            app.PrintPlain(str(perdidasTotales) + ' ' + contingencia.loc_name)
+            
+            # Vuleve y pone en servicio el elemento
             manejoDeContingencias(contingencia, estadoInicial, 'encender')
+            
         except:
             pass
+        
+    escenarioActivo.DiscardChanges()
             
 # app.PrintPlain(set_Elementos_a_monitorear)
 
 
-
+dataFrame.to_excel(os.path.join(ruta, 'prueba.xlsx'))
 app.EchoOn()
 app.PrintPlain(str((time.time() - start_time)) + ' segundos de ejecucion')  
+
 
 
         
